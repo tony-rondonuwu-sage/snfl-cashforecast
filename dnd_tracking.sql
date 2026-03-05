@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS deleted_record (
 -- ============================================================================
 
 -- Views
-CREATE OR REPLACE VIEW cf_enabled_prrecord AS
+CREATE VIEW IF NOT EXISTS cf_enabled_prrecord AS
 SELECT m1.*
 FROM ICRW_SCHEMA.prrecord m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
@@ -38,7 +38,7 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
-CREATE OR REPLACE VIEW cf_enabled_prentry AS
+CREATE VIEW IF NOT EXISTS cf_enabled_prentry AS
 SELECT m1.*
 FROM ICRW_SCHEMA.prentry m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
@@ -46,7 +46,7 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
-CREATE OR REPLACE VIEW cf_enabled_customer AS
+CREATE VIEW IF NOT EXISTS cf_enabled_customer AS
 SELECT m1.*
 FROM ICRW_SCHEMA.customer m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
@@ -54,7 +54,7 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
-CREATE OR REPLACE VIEW cf_enabled_vendor AS
+CREATE VIEW IF NOT EXISTS cf_enabled_vendor AS
 SELECT m1.*
 FROM ICRW_SCHEMA.vendor m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
@@ -62,7 +62,7 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
-CREATE OR REPLACE VIEW cf_enabled_term AS
+CREATE VIEW IF NOT EXISTS cf_enabled_term AS
 SELECT m1.*
 FROM ICRW_SCHEMA.term m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
@@ -70,7 +70,7 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
-CREATE OR REPLACE VIEW cf_enabled_location AS
+CREATE VIEW IF NOT EXISTS cf_enabled_location AS
 SELECT m1.*
 FROM ICRW_SCHEMA.location m1
 INNER JOIN ICRW_SCHEMA.companypref cp 
