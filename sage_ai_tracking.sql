@@ -82,6 +82,14 @@ INNER JOIN ICRW_SCHEMA.companypref cp
     AND cp.property = 'ENABLECASHFLOW' 
     AND cp.value = 'T';
 
+CREATE VIEW IF NOT EXISTS cf_enabled_pymtdetail AS
+SELECT m1.*
+FROM ICRW_SCHEMA.pymtdetail m1
+INNER JOIN ICRW_SCHEMA.companypref cp 
+    ON m1.cny_ = cp.cny_ 
+    AND cp.property = 'ENABLECASHFLOW' 
+    AND cp.value = 'T';
+
 -- Streams
 CREATE OR REPLACE STREAM cf_enabled_st_prrecord ON VIEW cf_enabled_prrecord;
 CREATE OR REPLACE STREAM cf_enabled_st_prentry ON VIEW cf_enabled_prentry;
@@ -89,6 +97,7 @@ CREATE OR REPLACE STREAM cf_enabled_st_customer ON VIEW cf_enabled_customer;
 CREATE OR REPLACE STREAM cf_enabled_st_vendor ON VIEW cf_enabled_vendor;
 CREATE OR REPLACE STREAM cf_enabled_st_term ON VIEW cf_enabled_term;
 CREATE OR REPLACE STREAM cf_enabled_st_location ON VIEW cf_enabled_location;
+CREATE OR REPLACE STREAM cf_enabled_st_pymtdetail ON VIEW cf_enabled_pymtdetail;
 
 -- ============================================================================
 -- SECTION 3: PROCEDURE & TASK - CONSUME STREAMS
