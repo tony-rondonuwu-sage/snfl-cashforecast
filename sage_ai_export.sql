@@ -268,9 +268,8 @@ DECLARE
     v_file_path VARCHAR;
     v_manifest_id NUMBER;
     v_result VARCHAR DEFAULT '';
+    res RESULTSET;
     c1 CURSOR FOR SELECT viewname, tablename, extra_filter FROM conf_api_views WHERE feature = 'cf';
-    c2 CURSOR FOR SELECT DISTINCT cny_ FROM cf_upsert_records WHERE tablename = :v_tablename AND processed = 'F';
-    c3 CURSOR FOR SELECT DISTINCT cny_ FROM cf_delete_records WHERE tablename = :v_tablename AND processed = 'F';
 BEGIN
     OPEN c1;
     FOR rec IN c1 DO
@@ -280,8 +279,9 @@ BEGIN
         v_extra_filter_clause := IFF(rec.extra_filter IS NOT NULL, ' AND ' || rec.extra_filter, '');
         v_base_filter := 'tablename = ''' || v_tablename || ''' AND processed = ''F''' || v_extra_filter_clause;
         
-        OPEN c2;
-        FOR cny_rec IN c2 DO
+        v_sql := 'SELECT DISTINCT cny_ FROM cf_upsert_records WHERE tablename = ''' || v_tablename || ''' AND processed = ''F''' || v_extra_filter_clause;
+        res := (EXECUTE IMMEDIATE :v_sql);
+        FOR cny_rec IN res DO
             v_cny := cny_rec.cny_;
             v_file_path := 'cash_forecasting/incoming/' || v_cny || '/' || v_export_name || '_UPSERT_' || v_export_timestamp_str || '_';
             
@@ -304,7 +304,7 @@ BEGIN
                          'SELECT ' || v_manifest_id || ', LISTAGG(csv_row, ''\n'') WITHIN GROUP (ORDER BY csv_row) ' ||
                          'FROM (SELECT TO_VARCHAR(OBJECT_CONSTRUCT(*)) AS csv_row FROM ' || v_viewname || ' v ' ||
                          'WHERE v.cnyNumber = ''' || v_cny || ''' ' ||
-                         'AND (v.cnyNumber, v.key) IN (SELECT cny_, record_ FROM cf_upsert_records WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I''))';
+                         'AND (v.cnyNumber, v.key) IN (SELECT cny_, record_ FROM cf_upsert_records WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'') LIMIT 100)';
             ELSE
                 v_sql := 'COPY INTO @sage_ai_export_stage/' || v_file_path || ' ' ||
                          'FROM (SELECT v.* FROM ' || v_viewname || ' v ' ||
@@ -314,10 +314,10 @@ BEGIN
             END IF;
             EXECUTE IMMEDIATE v_sql;
         END FOR;
-        CLOSE c2;
         
-        OPEN c3;
-        FOR cny_rec IN c3 DO
+        v_sql := 'SELECT DISTINCT cny_ FROM cf_delete_records WHERE tablename = ''' || v_tablename || ''' AND processed = ''F''' || v_extra_filter_clause;
+        res := (EXECUTE IMMEDIATE :v_sql);
+        FOR cny_rec IN res DO
             v_cny := cny_rec.cny_;
             v_file_path := 'cash_forecasting/incoming/' || v_cny || '/' || v_export_name || '_DELETE_' || v_export_timestamp_str || '_';
             
@@ -339,7 +339,7 @@ BEGIN
                 v_sql := 'INSERT INTO export_dry_run_data (manifest_file_id, csv_data) ' ||
                          'SELECT ' || v_manifest_id || ', LISTAGG(csv_row, ''\n'') WITHIN GROUP (ORDER BY csv_row) ' ||
                          'FROM (SELECT TO_VARCHAR(OBJECT_CONSTRUCT(*)) AS csv_row FROM cf_delete_records ' ||
-                         'WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'')';
+                         'WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'' LIMIT 10)';
             ELSE
                 v_sql := 'COPY INTO @sage_ai_export_stage/' || v_file_path || ' ' ||
                          'FROM (SELECT cny_, record_, tablename, stream_ts FROM cf_delete_records ' ||
@@ -348,7 +348,6 @@ BEGIN
             END IF;
             EXECUTE IMMEDIATE v_sql;
         END FOR;
-        CLOSE c3;
         
         v_result := v_result || IFF(v_result != '', ', ', '') || v_viewname;
     END FOR;
@@ -363,8 +362,11 @@ RETURNS STRING
 LANGUAGE SQL
 AS
 $$
+DECLARE
+    v_result STRING;
 BEGIN
-    RETURN (CALL cf_export(TRUE));
+    CALL cf_export(TRUE) INTO v_result;
+    RETURN v_result;
 END;
 $$;
 
@@ -373,8 +375,11 @@ RETURNS STRING
 LANGUAGE SQL
 AS
 $$
+DECLARE
+    v_result STRING;
 BEGIN
-    RETURN (CALL cf_export(FALSE));
+    CALL cf_export(FALSE) INTO v_result;
+    RETURN v_result;
 END;
 $$;
 
