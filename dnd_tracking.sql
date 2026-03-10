@@ -270,7 +270,7 @@ END;
 $$;
 
 CREATE OR REPLACE TASK dnd_task_consume_streams
-    SCHEDULE = 'USING CRON 10 */4 * * * America/Los_Angeles'
+    SCHEDULE = 'USING CRON 1 */4 * * * America/Los_Angeles'
 AS
     CALL dnd_process_stream_changes();
 
