@@ -635,7 +635,7 @@ FROM  SIF_SAGE_VIEWS.V_SA_prrecord accounts_receivable_payment
     LEFT JOIN SIF_SAGE_VIEWS.V_SA_CUSTOMER customer ON customer.cny_ = accounts_receivable_payment.cny_ AND customer.record_ = accounts_receivable_payment.customerkey
     LEFT JOIN SIF_SAGE_VIEWS.V_SA_CONTACT contacts_payTo ON contacts_payTo.cny_ = accounts_receivable_payment.cny_ AND contacts_payTo.record_ = accounts_receivable_payment.billtopaytokey
     LEFT JOIN SIF_SAGE_VIEWS.V_SA_EXCHANGERATEINFO exchangerateinfo ON exchangerateinfo.cny_ = accounts_receivable_payment.cny_ AND exchangerateinfo.recordkey = accounts_receivable_payment.record_
-    LEFT JOIN SIF_SAGE_VIEWS.V_SA_LOCATION melocation ON melocation.cny_ = accounts_receivable_payment.cny_ AND melocation.record_ = accounts_receivable_payment.record_
+    LEFT JOIN SIF_SAGE_VIEWS.V_SA_LOCATION melocation ON melocation.cny_ = accounts_receivable_payment.cny_ AND melocation.record_ = accounts_receivable_payment.locationkey
     LEFT JOIN SIF_SAGE_VIEWS.V_SA_FINANCIALACCOUNT financialaccount ON financialaccount.cny_ = accounts_receivable_payment.cny_ AND financialaccount.entity = accounts_receivable_payment.financialentity
     LEFT JOIN SIF_SAGE_VIEWS.V_SA_supdoc supdoc ON supdoc.cny_ = accounts_receivable_payment.cny_ AND supdoc.record_ = accounts_receivable_payment.record_
 
@@ -901,7 +901,7 @@ LEFT JOIN SIF_SAGE_VIEWS.V_SA_CONTACT billto ON billto.cny_ = accounts_receivabl
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_CONTACT shipto ON shipto.cny_ = accounts_receivable_invoice.cny_ and shipto.record_ = accounts_receivable_invoice.shiptoreturntokey
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_TAXSOLUTION taxsolution ON taxsolution.cny_ = accounts_receivable_invoice.cny_ and taxsolution.record_ = accounts_receivable_invoice.taxsolutionkey
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_EXCHANGERATEINFO exchangerateinfo ON exchangerateinfo.cny_ = accounts_receivable_invoice.cny_ and exchangerateinfo.recordkey = accounts_receivable_invoice.record_
-LEFT JOIN SIF_SAGE_VIEWS.V_SA_LOCATION melocation ON melocation.cny_ = accounts_receivable_invoice.cny_ and melocation.record_ = accounts_receivable_invoice.record_
+LEFT JOIN SIF_SAGE_VIEWS.V_SA_LOCATION melocation ON melocation.cny_ = accounts_receivable_invoice.cny_ and melocation.record_ = accounts_receivable_invoice.locationkey
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_TERM term ON term.cny_ = accounts_receivable_invoice.cny_ and term.record_ = accounts_receivable_invoice.termkey
 
 WHERE accounts_receivable_invoice.RECORDTYPE = 'ri'
@@ -1300,7 +1300,10 @@ manageremp.record_ AS manager_key ,
 mcontact.name AS manager_name ,
 parent.location_no AS parent_id ,
 company_config_location.parentkey AS parent_key ,
-parent.name AS parent_name
+parent.name AS parent_name,
+entity.location_no AS entity_id,
+company_config_location.entitykey AS entity_key,
+entity.name AS entity_name
 FROM  SIF_SAGE_VIEWS.V_SA_location  company_config_location
 
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_userinfo audit_createdbyuser ON audit_createdbyuser.cny_ = company_config_location.cny_ and audit_createdbyuser.record_ = company_config_location.createdby
@@ -1310,6 +1313,7 @@ LEFT JOIN SIF_SAGE_VIEWS.V_SA_contact contacts_shipto ON contacts_shipto.cny_ = 
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_location parent ON parent.cny_ = company_config_location.cny_ and parent.record_ = company_config_location.parentkey
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_employee manageremp ON manageremp.cny_ = company_config_location.cny_ and manageremp.employeeid = company_config_location.employeekey
 LEFT JOIN SIF_SAGE_VIEWS.V_SA_contact mcontact ON manageremp.cny_ = company_config_location.cny_ and manageremp.employeeid = company_config_location.employeekey and mcontact.cny_ = company_config_location.cny_  and mcontact.record_ = manageremp.contactkey
+LEFT JOIN SIF_SAGE_VIEWS.V_SA_LOCATION entity ON entity.cny_ = company_config_location.cny_ AND entity.record_ = company_config_location.entitykey
 
 ;
 

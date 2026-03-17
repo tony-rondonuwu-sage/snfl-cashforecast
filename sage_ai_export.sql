@@ -304,7 +304,7 @@ BEGIN
                          'SELECT ' || v_manifest_id || ', LISTAGG(csv_row, ''\n'') WITHIN GROUP (ORDER BY csv_row) ' ||
                          'FROM (SELECT TO_VARCHAR(OBJECT_CONSTRUCT(*)) AS csv_row FROM ' || v_viewname || ' v ' ||
                          'WHERE v.cnyNumber = ''' || v_cny || ''' ' ||
-                         'AND (v.cnyNumber, v.key) IN (SELECT cny_, record_ FROM cf_upsert_records WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'') LIMIT 100)';
+                         'AND (v.cnyNumber, v.key) IN (SELECT cny_, record_ FROM cf_upsert_records WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I''))';
             ELSE
                 v_sql := 'COPY INTO @sage_ai_export_stage/' || v_file_path || ' ' ||
                          'FROM (SELECT v.* FROM ' || v_viewname || ' v ' ||
@@ -339,7 +339,7 @@ BEGIN
                 v_sql := 'INSERT INTO export_dry_run_data (manifest_file_id, csv_data) ' ||
                          'SELECT ' || v_manifest_id || ', LISTAGG(csv_row, ''\n'') WITHIN GROUP (ORDER BY csv_row) ' ||
                          'FROM (SELECT TO_VARCHAR(OBJECT_CONSTRUCT(*)) AS csv_row FROM cf_delete_records ' ||
-                         'WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'' LIMIT 10)';
+                         'WHERE manifest_file_id = ' || v_manifest_id || ' AND processed = ''I'')';
             ELSE
                 v_sql := 'COPY INTO @sage_ai_export_stage/' || v_file_path || ' ' ||
                          'FROM (SELECT cny_, record_, tablename, stream_ts FROM cf_delete_records ' ||
