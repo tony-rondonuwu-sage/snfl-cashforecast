@@ -20,7 +20,7 @@ company_config_location
 ------ CONTENT OF accounts_payable_payment_detail
 
 CREATE OR REPLACE SECURE VIEW accounts_payable_payment_detail
-  WITH ROW ACCESS POLICY MAIN_DBACCT_DB.SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
+  WITH ROW ACCESS POLICY SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
   AS
 SELECT
     accounts_payable_payment_detail.cny_ AS cnyNumber,
@@ -981,7 +981,7 @@ WHERE accounts_receivable_invoice_line.RECORDTYPE = 'ri'
 ------ CONTENT OF accounts_receivable_payment_detail
 
 CREATE OR REPLACE VIEW accounts_receivable_payment_detail
-  WITH ROW ACCESS POLICY MAIN_DBACCT_DB.SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
+  WITH ROW ACCESS POLICY SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
   AS
 SELECT
     accounts_receivable_payment_detail.cny_ AS cnyNumber,
