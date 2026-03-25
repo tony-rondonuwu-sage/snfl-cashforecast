@@ -2,6 +2,8 @@
 -- SAGE AI DATA EXPORT PIPELINE - PART 1: TRACKING & STREAM CONSUMPTION
 -- ============================================================================
 
+ALTER TASK IF EXISTS capture_deleted_records SUSPEND;
+
 -- ============================================================================
 -- SECTION 1: TRACKING TABLES
 -- ============================================================================
