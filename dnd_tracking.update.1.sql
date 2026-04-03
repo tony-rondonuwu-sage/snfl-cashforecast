@@ -1,30 +1,6 @@
 -- ============================================================================
--- SAGE AI DATA EXPORT PIPELINE - PART 1: TRACKING & STREAM CONSUMPTION
--- ============================================================================
-
-ALTER TASK IF EXISTS capture_deleted_records SUSPEND;
-
--- ============================================================================
 -- SECTION 1: TRACKING TABLES
 -- ============================================================================
-
-CREATE TABLE IF NOT EXISTS upserted_record (
-    id NUMBER AUTOINCREMENT PRIMARY KEY,
-    cny_ NUMBER(15) NOT NULL,
-    record_ NUMBER(15) NOT NULL,
-    tablename VARCHAR(255) NOT NULL,
-    recordtype VARCHAR(10),
-    module VARCHAR(50),
-    operation_type CHAR(1) NOT NULL,
-    stream_ts TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
-
-CREATE TABLE IF NOT EXISTS deleted_record (
-    cny_ NUMBER(15) NOT NULL,
-    record_ NUMBER(15) NOT NULL,
-    tablename VARCHAR(255) NOT NULL,
-    stream_ts TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-);
 
 ALTER TABLE deleted_record ADD COLUMN IF NOT EXISTS recordtype VARCHAR(10);
 ALTER TABLE deleted_record ADD COLUMN IF NOT EXISTS module VARCHAR(50);
@@ -34,70 +10,6 @@ ALTER TABLE deleted_record ADD COLUMN IF NOT EXISTS module VARCHAR(50);
 -- SECTION 2: VIEWS AND STREAMS FOR CASHFORECASTING-ENABLED COMPANIES
 -- ============================================================================
 
--- Views
-CREATE VIEW IF NOT EXISTS cf_enabled_prrecord AS
-SELECT m1.*
-FROM ICRW_SCHEMA.prrecord m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_prentry AS
-SELECT m1.*
-FROM ICRW_SCHEMA.prentry m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_customer AS
-SELECT m1.*
-FROM ICRW_SCHEMA.customer m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_vendor AS
-SELECT m1.*
-FROM ICRW_SCHEMA.vendor m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_term AS
-SELECT m1.*
-FROM ICRW_SCHEMA.term m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_location AS
-SELECT m1.*
-FROM ICRW_SCHEMA.location m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
-CREATE VIEW IF NOT EXISTS cf_enabled_pymtdetail AS
-SELECT m1.*
-FROM ICRW_SCHEMA.pymtdetail m1
-INNER JOIN ICRW_SCHEMA.companypref cp 
-    ON m1.cny_ = cp.cny_ 
-    AND cp.property = 'ENABLECASHFLOW' 
-    AND cp.value = 'T';
-
--- Streams
-CREATE OR REPLACE STREAM dnd_st_prrecord ON VIEW cf_enabled_prrecord;
-CREATE OR REPLACE STREAM dnd_st_prentry ON VIEW cf_enabled_prentry;
-CREATE OR REPLACE STREAM dnd_st_customer ON VIEW cf_enabled_customer;
-CREATE OR REPLACE STREAM dnd_st_vendor ON VIEW cf_enabled_vendor;
-CREATE OR REPLACE STREAM dnd_st_term ON VIEW cf_enabled_term;
-CREATE OR REPLACE STREAM dnd_st_location ON VIEW cf_enabled_location;
 CREATE OR REPLACE STREAM dnd_st_pymtdetail ON VIEW cf_enabled_pymtdetail;
 
 -- ============================================================================
@@ -305,9 +217,3 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE TASK dnd_task_consume_streams
-    SCHEDULE = 'USING CRON 1 */4 * * * America/Los_Angeles'
-AS
-    CALL dnd_process_stream_changes();
-
-ALTER TASK dnd_task_consume_streams RESUME;

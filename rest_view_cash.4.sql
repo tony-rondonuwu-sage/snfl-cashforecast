@@ -980,7 +980,7 @@ WHERE accounts_receivable_invoice_line.RECORDTYPE = 'ri'
 
 ------ CONTENT OF accounts_receivable_payment_detail
 
-CREATE OR REPLACE VIEW accounts_receivable_payment_detail
+CREATE OR REPLACE SECURE VIEW accounts_receivable_payment_detail
   WITH ROW ACCESS POLICY SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
   AS
 SELECT

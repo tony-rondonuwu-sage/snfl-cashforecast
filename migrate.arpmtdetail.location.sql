@@ -1,7 +1,7 @@
 ------ CONTENT OF accounts_receivable_payment_detail
 
-CREATE OR REPLACE VIEW accounts_receivable_payment_detail
-  WITH ROW ACCESS POLICY MAIN_DBACCT_DB.SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
+CREATE OR REPLACE SECURE VIEW accounts_receivable_payment_detail
+  WITH ROW ACCESS POLICY SIF_REPLICATION_SCHEMA.ENFORCE_COMPANY_ACCESS ON (cnyNumber)
   AS
 SELECT
     accounts_receivable_payment_detail.cny_ AS cnyNumber,
