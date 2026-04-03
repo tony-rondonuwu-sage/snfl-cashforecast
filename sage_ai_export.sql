@@ -6,10 +6,19 @@
 -- SECTION 0: CONFIGURATION TABLES
 -- ============================================================================
 
+CREATE OR REPLACE TABLE conf_pod (
+    pod_name VARCHAR(50) PRIMARY KEY,
+    region VARCHAR(50) NOT NULL,
+    s3_stage VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    total_pods_for_region NUMBER
+);
+
 CREATE OR REPLACE TABLE conf_feature (
     feature VARCHAR(50) PRIMARY KEY,
     description VARCHAR(255),
-    export_path_prefix VARCHAR(255),
+    s3_feature_path VARCHAR(255),
+    s3_export_path VARCHAR(255),
     manifest_file_prefix VARCHAR(100)
 );
 
@@ -32,20 +41,13 @@ CREATE OR REPLACE TABLE conf_api_views (
     FOREIGN KEY (feature) REFERENCES conf_feature(feature)
 );
 
-CREATE OR REPLACE TABLE conf_pod (
-    pod_name VARCHAR(50) PRIMARY KEY,
-    region VARCHAR(50) NOT NULL,
-    s3_stage VARCHAR(255) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE
-);
-
-INSERT INTO conf_feature (feature, description, export_path_prefix, manifest_file_prefix)
-SELECT 'cf', 'Cash Forecasting', 'cash_forecasting/incoming', 'cashflow_data'
-WHERE NOT EXISTS (SELECT 1 FROM conf_feature WHERE feature = 'cf');
-
-INSERT INTO conf_pod (pod_name, region, s3_stage)
-SELECT 'p308', 'US', 'sage_ai_export_stage'
+INSERT INTO conf_pod (pod_name, region, s3_stage, total_pods_for_region)
+SELECT 'p308', 'US', 'sage_ai_export_stage', 2
 WHERE NOT EXISTS (SELECT 1 FROM conf_pod WHERE pod_name = 'p308');
+
+INSERT INTO conf_feature (feature, description, s3_feature_path, s3_export_path, manifest_file_prefix)
+SELECT 'cf', 'Cash Forecasting', 'cash_forecasting', 'incoming', 'cashflow_data'
+WHERE NOT EXISTS (SELECT 1 FROM conf_feature WHERE feature = 'cf');
 
 MERGE INTO conf_streams AS target
 USING (
@@ -301,12 +303,12 @@ CREATE OR REPLACE STORAGE INTEGRATION sage_ai_s3_integration
     TYPE = EXTERNAL_STAGE
     STORAGE_PROVIDER = 'S3'
     ENABLED = TRUE
-    STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::<AWS_ACCOUNT_ID>:role/<ROLE_NAME>'
-    STORAGE_ALLOWED_LOCATIONS = ('s3://<SAGE_AI_BUCKET>/');
+    STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::374322211295:role/ia-dds-snowflake'
+    STORAGE_ALLOWED_LOCATIONS = ('s3://sail-mercury-intacct-data-extract-development-eu-west-1/'); 
 
 CREATE OR REPLACE STAGE sage_ai_export_stage
     STORAGE_INTEGRATION = sage_ai_s3_integration
-    URL = 's3://<SAGE_AI_BUCKET>/exports/'
+    URL = 's3://sail-mercury-intacct-data-extract-development-eu-west-1/'
     FILE_FORMAT = (TYPE = PARQUET);
 
 
@@ -328,7 +330,8 @@ DECLARE
     v_manifest_file_name VARCHAR;
     v_pod_name VARCHAR;
     v_s3_stage VARCHAR;
-    v_export_path_prefix VARCHAR;
+    v_s3_feature_path VARCHAR;
+    v_s3_export_path VARCHAR;
     v_manifest_file_prefix VARCHAR;
     v_viewname VARCHAR;
     v_export_name VARCHAR;
@@ -353,8 +356,8 @@ BEGIN
     SELECT pod_name, s3_stage INTO v_pod_name, v_s3_stage FROM conf_pod WHERE is_active = TRUE LIMIT 1;
     v_debug := v_debug || '[2] pod_name=' || v_pod_name || ', s3_stage=' || v_s3_stage || '\n';
     
-    SELECT export_path_prefix, manifest_file_prefix INTO v_export_path_prefix, v_manifest_file_prefix FROM conf_feature WHERE feature = :p_feature;
-    v_debug := v_debug || '[3] export_path_prefix=' || v_export_path_prefix || ', manifest_file_prefix=' || v_manifest_file_prefix || '\n';
+    SELECT s3_feature_path, s3_export_path, manifest_file_prefix INTO v_s3_feature_path, v_s3_export_path, v_manifest_file_prefix FROM conf_feature WHERE feature = :p_feature;
+    v_debug := v_debug || '[3] s3_feature_path=' || v_s3_feature_path || ', s3_export_path=' || v_s3_export_path || ', manifest_file_prefix=' || v_manifest_file_prefix || '\n';
     
     SELECT COALESCE(MAX(iteration), 0) + 1 INTO v_iteration 
     FROM export_manifest WHERE date = :v_export_date AND pod_name = :v_pod_name AND feature = :p_feature;
@@ -386,7 +389,7 @@ BEGIN
         res := (EXECUTE IMMEDIATE :v_sql);
         FOR cny_rec IN res DO
             v_cny := cny_rec.cny_;
-            v_file_path := v_export_path_prefix || '/' || v_cny || '/' || v_export_name || '_UPSERT_' || v_export_timestamp_str || '_';
+            v_file_path := v_s3_feature_path || '/' || v_s3_export_path || '/' || v_cny || '/' || v_export_name || '_UPSERT_' || v_export_timestamp_str || '_';
             v_debug := v_debug || '[10] Processing upsert cny_=' || v_cny || ', file_path=' || v_file_path || '\n';
             
             INSERT INTO export_data_files (manifest_file_id, view_name, file_path, export_type)
@@ -417,6 +420,7 @@ BEGIN
                              'FROM (SELECT v.* FROM ' || v_viewname || ' v ' ||
                              'WHERE v.cnyNumber = ''' || v_cny || ''' ' ||
                              'AND (TO_NUMBER(v.cnyNumber), TO_NUMBER(v.key)) IN (SELECT cny_, record_ FROM ' || v_upsert_table || ' WHERE data_file_id = ' || v_data_file_id || ')) ' ||
+                             'MAX_FILE_SIZE = 268435456 ' ||
                              'INCLUDE_QUERY_ID = FALSE';
                 END IF;
                 v_debug := v_debug || '[13] Export SQL=' || v_sql || '\n';
@@ -438,7 +442,7 @@ BEGIN
         res := (EXECUTE IMMEDIATE :v_sql);
         FOR cny_rec IN res DO
             v_cny := cny_rec.cny_;
-            v_file_path := v_export_path_prefix || '/' || v_cny || '/' || v_export_name || '_DELETE_' || v_export_timestamp_str || '_';
+            v_file_path := v_s3_feature_path || '/' || v_s3_export_path || '/' || v_cny || '/' || v_export_name || '_DELETE_' || v_export_timestamp_str || '_';
             v_debug := v_debug || '[16] Processing delete cny_=' || v_cny || ', file_path=' || v_file_path || '\n';
             
             INSERT INTO export_data_files (manifest_file_id, view_name, file_path, export_type)
@@ -467,6 +471,7 @@ BEGIN
                     v_sql := 'COPY INTO @' || v_s3_stage || '/' || v_file_path || ' ' ||
                              'FROM (SELECT cny_, record_, tablename, stream_ts FROM ' || v_delete_table || ' ' ||
                              'WHERE data_file_id = ' || v_data_file_id || ') ' ||
+                             'MAX_FILE_SIZE = 268435456 ' ||
                              'INCLUDE_QUERY_ID = FALSE';
                 END IF;
                 v_debug := v_debug || '[19] Export SQL=' || v_sql || '\n';
@@ -532,9 +537,9 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE TASK task_export_to_s3
+CREATE OR REPLACE TASK cf_task_export_to_s3
     WAREHOUSE = MONITOR_WH
-    AFTER task_consume_streams
+    AFTER cf_task_consume_streams
 AS
     CALL cf_export_to_s3();
 
@@ -542,25 +547,49 @@ AS
 -- SECTION 6: TASK - CREATE MANIFESTS AND FINALIZE
 -- ============================================================================
 
-CREATE OR REPLACE TASK task_create_manifests
-    WAREHOUSE = MONITOR_WH
-    AFTER task_export_to_s3
+CREATE OR REPLACE PROCEDURE create_manifests(p_feature VARCHAR, p_dry_run BOOLEAN DEFAULT FALSE)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
 AS
 DECLARE
-    v_export_timestamp TIMESTAMP_NTZ := DATE_TRUNC('SECOND', CURRENT_TIMESTAMP());
-    v_export_timestamp_str VARCHAR := TO_VARCHAR(v_export_timestamp, 'YYYY-MM-DD_HH24:MI:SS');
+    v_export_date DATE := CURRENT_DATE();
     v_pod_name VARCHAR;
     v_region VARCHAR;
     v_s3_stage VARCHAR;
+    v_manifest_file_name VARCHAR;
+    v_manifest_file_prefix VARCHAR;
+    v_s3_feature_path VARCHAR;
+    v_final_manifest_name VARCHAR;
     v_data_file_content VARIANT;
     v_all_pods_complete BOOLEAN;
+    v_total_pods_for_region NUMBER;
+    v_manifest_count NUMBER DEFAULT 0;
+    v_debug VARCHAR DEFAULT '';
+    v_sql VARCHAR;
 BEGIN
-    SELECT pod_name, region, s3_stage INTO v_pod_name, v_region, v_s3_stage FROM conf_pod WHERE is_active = TRUE LIMIT 1;
-    
+    v_debug := '[1] Starting create_manifests, feature=' || p_feature || ', dry_run=' || IFF(p_dry_run, 'TRUE', 'FALSE') || ', export_date=' || TO_VARCHAR(v_export_date) || '\n';
+
+    SELECT pod_name, region, s3_stage, total_pods_for_region INTO v_pod_name, v_region, v_s3_stage, v_total_pods_for_region FROM conf_pod WHERE is_active = TRUE LIMIT 1;
+    v_debug := v_debug || '[2] pod_name=' || v_pod_name || ', region=' || v_region || ', s3_stage=' || v_s3_stage || ', total_pods_for_region=' || v_total_pods_for_region || '\n';
+
+    SELECT s3_feature_path, manifest_file_prefix INTO v_s3_feature_path, v_manifest_file_prefix FROM conf_feature WHERE feature = :p_feature;
+    v_debug := v_debug || '[3] s3_feature_path=' || v_s3_feature_path || ', manifest_file_prefix=' || v_manifest_file_prefix || '\n';
+    v_final_manifest_name := v_manifest_file_prefix || '_ready_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || '000001.done';
+    v_debug := v_debug || '[4] final_manifest_name=' || v_final_manifest_name || '\n';
+
+    SELECT manifest_file_name INTO v_manifest_file_name
+    FROM export_manifest
+    WHERE date = :v_export_date AND feature = :p_feature AND pod_name = :v_pod_name
+    ORDER BY export_timestamp DESC
+    LIMIT 1;
+    v_debug := v_debug || '[5] manifest_file_name=' || v_manifest_file_name || '\n';
+
     SELECT OBJECT_CONSTRUCT(
-        'export_timestamp', :v_export_timestamp,
+        'export_date', :v_export_date,
         'pod_name', :v_pod_name,
         'region', :v_region,
+        'feature', :p_feature,
         'files', ARRAY_AGG(OBJECT_CONSTRUCT(
             'view_name', edf.view_name,
             'file_path', edf.file_path,
@@ -570,62 +599,75 @@ BEGIN
     ) INTO v_data_file_content
     FROM export_data_files edf
     JOIN export_manifest em ON edf.manifest_file_id = em.id
-    WHERE em.export_timestamp = :v_export_timestamp AND em.pod_name = :v_pod_name;
+    WHERE em.date = :v_export_date AND em.feature = :p_feature AND em.pod_name = :v_pod_name;
+    v_debug := v_debug || '[6] data_file_content=' || TO_VARCHAR(v_data_file_content) || '\n';
 
-    EXECUTE IMMEDIATE 'COPY INTO @' || v_s3_stage || '/' || v_export_timestamp_str || '/' || v_pod_name || '/manifest.json ' ||
-        'FROM (SELECT PARSE_JSON(''' || TO_VARCHAR(v_data_file_content) || ''')) FILE_FORMAT = (TYPE = JSON)';
+    v_sql := 'COPY INTO @' || v_s3_stage || '/' || v_s3_feature_path || '/' || v_manifest_file_name || '.json ' ||
+        'FROM (SELECT PARSE_JSON(''' || TO_VARCHAR(v_data_file_content) || ''')) FILE_FORMAT = (TYPE = JSON) SINGLE = TRUE OVERWRITE = TRUE';
+    v_debug := v_debug || '[7] Manifest COPY SQL=' || v_sql || '\n';
+    IF (p_dry_run) THEN
+        v_debug := v_debug || '[8] DRY RUN - Skipping manifest JSON write to S3\n';
+    ELSE
+        EXECUTE IMMEDIATE v_sql;
+        v_debug := v_debug || '[8] Manifest JSON file written successfully\n';
+    END IF;
 
-    SELECT COUNT(*) = (SELECT COUNT(*) FROM conf_pod WHERE region = :v_region AND is_active = TRUE)
-    INTO v_all_pods_complete
-    FROM (
-        SELECT DISTINCT em.pod_name 
-        FROM export_manifest em
-        WHERE em.export_timestamp = :v_export_timestamp
-          AND em.pod_name IN (SELECT pod_name FROM conf_pod WHERE region = :v_region AND is_active = TRUE)
-    );
+    v_sql := 'LS @' || v_s3_stage || '/' || v_s3_feature_path || '/ PATTERN=''p.*\\.' || v_manifest_file_prefix || '_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || '.*\\.json.*''';
+    v_debug := v_debug || '[9] LS SQL=' || v_sql || '\n';
+    IF (p_dry_run) THEN
+        v_manifest_count := 2;
+        v_debug := v_debug || '[10] DRY RUN - Skipping LS, manifest_count=0, total_pods_for_region=' || v_total_pods_for_region || '\n';
+    ELSE
+        EXECUTE IMMEDIATE v_sql;
+        SELECT COUNT(*) INTO v_manifest_count FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+        v_debug := v_debug || '[10] manifest_count=' || v_manifest_count || ', total_pods_for_region=' || v_total_pods_for_region || '\n';
+    END IF;
+
+    v_all_pods_complete := (v_manifest_count >= v_total_pods_for_region);
+    v_debug := v_debug || '[11] all_pods_complete=' || IFF(v_all_pods_complete, 'TRUE', 'FALSE') || '\n';
 
     IF (v_all_pods_complete) THEN
-        EXECUTE IMMEDIATE 'COPY INTO @' || v_s3_stage || '/' || v_export_timestamp_str || '/' || v_region || '/final_manifest.json ' ||
-            'FROM (SELECT OBJECT_CONSTRUCT(' ||
-            '''export_timestamp'', ''' || v_export_timestamp || ''',' ||
-            '''region'', ''' || v_region || ''',' ||
-            '''status'', ''COMPLETE'',' ||
-            '''created_at'', CURRENT_TIMESTAMP()' ||
-            ')) FILE_FORMAT = (TYPE = JSON)';
+        BEGIN
+            v_sql := 'COPY INTO @' || v_s3_stage || '/' || v_s3_feature_path || '/' || v_final_manifest_name || ' ' ||
+                'FROM (SELECT OBJECT_CONSTRUCT(' ||
+                '''export_date'', ''' || v_export_date || ''',' ||
+                '''region'', ''' || v_region || ''',' ||
+                '''feature'', ''' || p_feature || ''',' ||
+                '''status'', ''COMPLETE'',' ||
+                '''created_at'', CURRENT_TIMESTAMP()' ||
+                ')) FILE_FORMAT = (TYPE = JSON) SINGLE = TRUE OVERWRITE = FALSE';
+            v_debug := v_debug || '[12] Final manifest COPY SQL=' || v_sql || '\n';
+            IF (p_dry_run) THEN
+                v_debug := v_debug || '[13] DRY RUN - Skipping final manifest write to S3\n';
+            ELSE
+                EXECUTE IMMEDIATE v_sql;
+                v_debug := v_debug || '[13] Final manifest written successfully\n';
+            END IF;
+        EXCEPTION
+            WHEN OTHER THEN
+                v_debug := v_debug || '[13-IGNORED] Final manifest write failed: ' || SQLERRM || '\n';
+        END;
+    ELSE
+        v_debug := v_debug || '[12] Skipping final manifest - not all pods complete\n';
     END IF;
+
+    v_debug := v_debug || '[14] Completed create_manifests\n';
+    RETURN IFF(p_dry_run, '[DRY RUN] ', '') || 'Manifest created: ' || v_manifest_file_name || '. All pods complete: ' || v_all_pods_complete || '\n\n--- DEBUG LOG ---\n' || v_debug;
 END;
+
+CREATE OR REPLACE TASK cf_task_create_manifests
+    WAREHOUSE = MONITOR_WH
+    AFTER cf_task_export_to_s3
+AS
+    CALL create_manifests('cf');
 
 -- ============================================================================
 -- SECTION 7: ENABLE TASKS
 -- ============================================================================
 
-ALTER TASK task_create_manifests RESUME;
-ALTER TASK task_export_to_s3 RESUME;
-ALTER TASK task_consume_streams RESUME;
+ALTER TASK cf_task_create_manifests RESUME;
+ALTER TASK cf_task_export_to_s3 RESUME;
 
--- ============================================================================
--- SECTION 8: HELPER PROCEDURES
--- ============================================================================
 
-CREATE OR REPLACE PROCEDURE check_region_export_status(p_export_date DATE, p_region VARCHAR)
-RETURNS TABLE (pod_name VARCHAR, status VARCHAR)
-LANGUAGE SQL
-AS
-DECLARE
-    res RESULTSET;
-BEGIN
-    res := (
-        SELECT 
-            cp.pod_name,
-            CASE WHEN em.pod_name IS NOT NULL THEN 'COMPLETE' ELSE 'PENDING' END AS status
-        FROM conf_pod cp
-        LEFT JOIN (
-            SELECT DISTINCT pod_name 
-            FROM export_manifest 
-            WHERE date = :p_export_date
-        ) em ON cp.pod_name = em.pod_name
-        WHERE cp.region = :p_region AND cp.is_active = TRUE
-    );
-    RETURN TABLE(res);
-END;
-
+call cf_export_to_s3();
+LS @my_s3_stage/ PATTERN='.*';
