@@ -287,9 +287,6 @@ CREATE OR REPLACE TASK cf_task_consume_streams
 AS
     CALL cf_process_stream_changes();
 
-ALTER TASK cf_task_consume_streams RESUME;
-
-
 
 -- ============================================================================
 -- SAGE AI DATA EXPORT PIPELINE - PART 2: STORAGE, EXPORT & MANIFESTS
@@ -299,7 +296,7 @@ ALTER TASK cf_task_consume_streams RESUME;
 -- SECTION 1: STORAGE INTEGRATION AND EXTERNAL STAGE
 -- ============================================================================
 
-CREATE OR REPLACE STORAGE INTEGRATION sage_ai_s3_integration
+CREATE STORAGE INTEGRATION IF NOT EXISTS sage_ai_s3_integration
     TYPE = EXTERNAL_STAGE
     STORAGE_PROVIDER = 'S3'
     ENABLED = TRUE
@@ -421,7 +418,8 @@ BEGIN
                              'WHERE v.cnyNumber = ''' || v_cny || ''' ' ||
                              'AND (TO_NUMBER(v.cnyNumber), TO_NUMBER(v.key)) IN (SELECT cny_, record_ FROM ' || v_upsert_table || ' WHERE data_file_id = ' || v_data_file_id || ')) ' ||
                              'MAX_FILE_SIZE = 268435456 ' ||
-                             'INCLUDE_QUERY_ID = FALSE';
+                             'INCLUDE_QUERY_ID = FALSE ' ||
+                             'HEADER = TRUE';
                 END IF;
                 v_debug := v_debug || '[13] Export SQL=' || v_sql || '\n';
                 EXECUTE IMMEDIATE v_sql;
@@ -472,7 +470,8 @@ BEGIN
                              'FROM (SELECT cny_, record_, tablename, stream_ts FROM ' || v_delete_table || ' ' ||
                              'WHERE data_file_id = ' || v_data_file_id || ') ' ||
                              'MAX_FILE_SIZE = 268435456 ' ||
-                             'INCLUDE_QUERY_ID = FALSE';
+                             'INCLUDE_QUERY_ID = FALSE ' ||
+                             'HEADER = TRUE';
                 END IF;
                 v_debug := v_debug || '[19] Export SQL=' || v_sql || '\n';
                 EXECUTE IMMEDIATE v_sql;
@@ -498,32 +497,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE PROCEDURE cf_export_data(p_dry_run BOOLEAN DEFAULT FALSE)
-RETURNS STRING
-LANGUAGE SQL
-AS
-$$
-DECLARE
-    v_result STRING;
-BEGIN
-    CALL export_data('cf', :p_dry_run) INTO v_result;
-    RETURN v_result;
-END;
-$$;
-
-CREATE OR REPLACE PROCEDURE cf_export_dry_run()
-RETURNS STRING
-LANGUAGE SQL
-AS
-$$
-DECLARE
-    v_result STRING;
-BEGIN
-    CALL cf_export_data(TRUE) INTO v_result;
-    RETURN v_result;
-END;
-$$;
-
 CREATE OR REPLACE PROCEDURE cf_export_to_s3()
 RETURNS STRING
 LANGUAGE SQL
@@ -532,7 +505,7 @@ $$
 DECLARE
     v_result STRING;
 BEGIN
-    CALL cf_export_data(FALSE) INTO v_result;
+    CALL export_data('cf', FALSE) INTO v_result;
     RETURN v_result;
 END;
 $$;
@@ -655,19 +628,30 @@ BEGIN
     RETURN IFF(p_dry_run, '[DRY RUN] ', '') || 'Manifest created: ' || v_manifest_file_name || '. All pods complete: ' || v_all_pods_complete || '\n\n--- DEBUG LOG ---\n' || v_debug;
 END;
 
-CREATE OR REPLACE TASK cf_task_create_manifests
+CREATE OR REPLACE PROCEDURE cf_create_manifests_in_s3()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    v_result STRING;
+BEGIN
+    CALL export_data('cf', FALSE) INTO v_result;
+    RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE TASK cf_task_create_manifests_in_s3
     WAREHOUSE = MONITOR_WH
     AFTER cf_task_export_to_s3
 AS
-    CALL create_manifests('cf');
+    CALL cf_create_manifests_in_s3('cf');
 
 -- ============================================================================
 -- SECTION 7: ENABLE TASKS
 -- ============================================================================
 
-ALTER TASK cf_task_create_manifests RESUME;
+ALTER TASK cf_task_create_manifests_in_s3 RESUME;
 ALTER TASK cf_task_export_to_s3 RESUME;
+ALTER TASK cf_task_consume_streams RESUME;
 
-
-call cf_export_to_s3();
-LS @my_s3_stage/ PATTERN='.*';
