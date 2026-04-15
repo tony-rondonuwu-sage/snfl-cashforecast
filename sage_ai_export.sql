@@ -180,17 +180,15 @@ AS
 $$
 DECLARE
     v_tablename VARCHAR;
-    v_whencreated_column VARCHAR;
     v_view_name VARCHAR;
     v_stream_name VARCHAR;
     v_sql VARCHAR;
     v_count INTEGER DEFAULT 0;
     res RESULTSET;
 BEGIN
-    res := (SELECT tablename, whencreated_column FROM conf_streams WHERE feature = :p_feature);
+    res := (SELECT tablename FROM conf_streams WHERE feature = :p_feature);
     FOR rec IN res DO
         v_tablename := rec.tablename;
-        v_whencreated_column := rec.whencreated_column;
         v_view_name := p_feature || '_enabled_' || v_tablename;
         v_stream_name := p_feature || '_enabled_st_' || v_tablename;
         
@@ -199,8 +197,7 @@ BEGIN
                  'INNER JOIN ICRW_SCHEMA.companypref cp ' ||
                  'ON m1.cny_ = cp.cny_ ' ||
                  'AND cp.property = ''ENABLECASHFLOW'' ' ||
-                 'AND cp.value = ''T'' ' ||
-                 'WHERE m1.' || v_whencreated_column || ' >= DATE_TRUNC(''year'', DATEADD(year, -2, CURRENT_DATE()))';
+                 'AND cp.value = ''T''';
         EXECUTE IMMEDIATE v_sql;
         
         v_sql := 'CREATE STREAM IF NOT EXISTS ' || v_stream_name || ' ON VIEW ' || v_view_name;
@@ -230,6 +227,8 @@ DECLARE
     v_extra_col VARCHAR;
     v_extra_val VARCHAR;
     v_extra_filter VARCHAR;
+    v_whencreated_column VARCHAR;
+    v_whencreated_filter VARCHAR;
     v_upsert_count INTEGER;
     v_delete_count INTEGER;
     v_result VARCHAR DEFAULT '';
@@ -240,7 +239,7 @@ BEGIN
     v_upsert_table := p_feature || '_upsert_records';
     v_delete_table := p_feature || '_delete_records';
     
-    res := (SELECT tablename, extra_source_columns, extra_target_columns, extra_filter_to_records FROM conf_streams WHERE feature = :p_feature);
+    res := (SELECT tablename, extra_source_columns, extra_target_columns, extra_filter_to_records, whencreated_column FROM conf_streams WHERE feature = :p_feature);
     FOR rec IN res DO
         v_tablename := rec.tablename;
         v_stream_name := p_feature || '_enabled_st_' || v_tablename;
@@ -248,6 +247,8 @@ BEGIN
         v_extra_col := CASE WHEN rec.extra_target_columns IS NOT NULL THEN ', ' || rec.extra_target_columns ELSE '' END;
         v_extra_val := CASE WHEN rec.extra_source_columns IS NOT NULL THEN ', m1.' || rec.extra_source_columns ELSE '' END;
         v_extra_filter := CASE WHEN rec.extra_filter_to_records IS NOT NULL THEN ' AND m1.' || rec.extra_filter_to_records ELSE '' END;
+        v_whencreated_column := rec.whencreated_column;
+        v_whencreated_filter := CASE WHEN v_whencreated_column IS NOT NULL THEN ' AND m1.' || v_whencreated_column || ' >= DATE_TRUNC(''year'', DATEADD(year, -2, CURRENT_DATE()))' ELSE '' END;
         
         BEGIN TRANSACTION;
         
@@ -255,7 +256,7 @@ BEGIN
             'INSERT INTO ' || v_upsert_table || ' (cny_, record_, tablename' || v_extra_col || ', operation_type) ' ||
             'SELECT m1.cny_, m1.record_, ''' || v_tablename || '''' || v_extra_val || ', ' ||
             'CASE WHEN m1.METADATA$ISUPDATE = TRUE THEN ''U'' ELSE ''I'' END ' ||
-            'FROM ' || v_stream_name || ' m1 WHERE m1.METADATA$ACTION = ''INSERT''' || v_extra_filter;
+            'FROM ' || v_stream_name || ' m1 WHERE m1.METADATA$ACTION = ''INSERT''' || v_extra_filter || v_whencreated_filter;
         v_upsert_count := SQLROWCOUNT;
         
         EXECUTE IMMEDIATE 
