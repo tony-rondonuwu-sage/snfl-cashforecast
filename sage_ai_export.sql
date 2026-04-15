@@ -3,7 +3,26 @@
 -- ============================================================================
 
 -- ============================================================================
--- SECTION 0: CONFIGURATION TABLES
+-- SECTION 0-A: STORAGE INTEGRATION AND EXTERNAL STAGE
+-- ============================================================================
+
+CREATE STORAGE INTEGRATION IF NOT EXISTS sage_ai_s3_integration
+    TYPE = EXTERNAL_STAGE
+    STORAGE_PROVIDER = 'S3'
+    ENABLED = TRUE
+    STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::374322211295:role/ia-dds-snowflake'
+    STORAGE_ALLOWED_LOCATIONS = ('s3://sail-mercury-intacct-data-extract-development-eu-west-1/'); 
+
+CREATE OR REPLACE STAGE sage_ai_export_stage
+    STORAGE_INTEGRATION = sage_ai_s3_integration
+    URL = 's3://sail-mercury-intacct-data-extract-development-eu-west-1/'
+    FILE_FORMAT = (TYPE = PARQUET);
+
+CREATE FILE FORMAT IF NOT EXISTS json_ff TYPE = JSON;
+
+
+-- ============================================================================
+-- SECTION 0-B: CONFIGURATION TABLES
 -- ============================================================================
 
 CREATE OR REPLACE TABLE conf_pod (
@@ -28,6 +47,7 @@ CREATE OR REPLACE TABLE conf_streams (
     extra_source_columns VARCHAR(500),
     extra_target_columns VARCHAR(500),
     extra_filter_to_records VARCHAR(500),
+    whencreated_column VARCHAR(100),
     PRIMARY KEY (feature, tablename),
     FOREIGN KEY (feature) REFERENCES conf_feature(feature)
 );
@@ -52,19 +72,19 @@ WHERE NOT EXISTS (SELECT 1 FROM conf_feature WHERE feature = 'cf');
 MERGE INTO conf_streams AS target
 USING (
     SELECT * FROM VALUES
-        ('cf', 'prrecord', 'recordtype', 'recordtype', 'recordtype IN (''pp'', ''pi'', ''rp'', ''rr'', ''ro'', ''ri'')'),
-        ('cf', 'prentry', 'recordtype', 'recordtype', 'recordtype IN (''pp'', ''pi'', ''rp'', ''rr'', ''ro'', ''ri'')'),
-        ('cf', 'customer', NULL, NULL, NULL),
-        ('cf', 'vendor', NULL, NULL, NULL),
-        ('cf', 'term', 'modulekey', 'module', 'modulekey is not null'),
-        ('cf', 'location', NULL, NULL, NULL),
-        ('cf', 'pymtdetail', 'modulekey', 'module', NULL)
-    AS src (feature, tablename, extra_source_columns, extra_target_columns, extra_filter_to_records)
+        ('cf', 'prrecord', 'recordtype', 'recordtype', 'recordtype IN (''pp'', ''pi'', ''rp'', ''rr'', ''ro'', ''ri'')', 'auwhencreated'),
+        ('cf', 'prentry', 'recordtype', 'recordtype', 'recordtype IN (''pp'', ''pi'', ''rp'', ''rr'', ''ro'', ''ri'')', 'whencreated'),
+        ('cf', 'customer', NULL, NULL, NULL, 'whencreated'),
+        ('cf', 'vendor', NULL, NULL, NULL, 'whencreated'),
+        ('cf', 'term', 'modulekey', 'module', 'modulekey is not null', 'whencreated'),
+        ('cf', 'location', NULL, NULL, NULL, 'whencreated'),
+        ('cf', 'pymtdetail', 'modulekey', 'module', NULL, 'whencreated')
+    AS src (feature, tablename, extra_source_columns, extra_target_columns, extra_filter_to_records, whencreated_column)
 ) AS source
 ON target.feature = source.feature AND target.tablename = source.tablename
 WHEN NOT MATCHED THEN
-    INSERT (feature, tablename, extra_source_columns, extra_target_columns, extra_filter_to_records)
-    VALUES (source.feature, source.tablename, source.extra_source_columns, source.extra_target_columns, source.extra_filter_to_records);
+    INSERT (feature, tablename, extra_source_columns, extra_target_columns, extra_filter_to_records, whencreated_column)
+    VALUES (source.feature, source.tablename, source.extra_source_columns, source.extra_target_columns, source.extra_filter_to_records, source.whencreated_column);
 
 MERGE INTO conf_api_views AS target
 USING (
@@ -166,15 +186,17 @@ AS
 $$
 DECLARE
     v_tablename VARCHAR;
+    v_whencreated_column VARCHAR;
     v_view_name VARCHAR;
     v_stream_name VARCHAR;
     v_sql VARCHAR;
     v_count INTEGER DEFAULT 0;
     res RESULTSET;
 BEGIN
-    res := (SELECT tablename FROM conf_streams WHERE feature = :p_feature);
+    res := (SELECT tablename, whencreated_column FROM conf_streams WHERE feature = :p_feature);
     FOR rec IN res DO
         v_tablename := rec.tablename;
+        v_whencreated_column := rec.whencreated_column;
         v_view_name := p_feature || '_enabled_' || v_tablename;
         v_stream_name := p_feature || '_enabled_st_' || v_tablename;
         
@@ -183,7 +205,8 @@ BEGIN
                  'INNER JOIN ICRW_SCHEMA.companypref cp ' ||
                  'ON m1.cny_ = cp.cny_ ' ||
                  'AND cp.property = ''ENABLECASHFLOW'' ' ||
-                 'AND cp.value = ''T''';
+                 'AND cp.value = ''T'' ' ||
+                 'WHERE m1.' || v_whencreated_column || ' >= DATE_TRUNC(''year'', DATEADD(year, -2, CURRENT_DATE()))';
         EXECUTE IMMEDIATE v_sql;
         
         v_sql := 'CREATE STREAM IF NOT EXISTS ' || v_stream_name || ' ON VIEW ' || v_view_name;
@@ -293,23 +316,6 @@ AS
 -- ============================================================================
 
 -- ============================================================================
--- SECTION 1: STORAGE INTEGRATION AND EXTERNAL STAGE
--- ============================================================================
-
-CREATE STORAGE INTEGRATION IF NOT EXISTS sage_ai_s3_integration
-    TYPE = EXTERNAL_STAGE
-    STORAGE_PROVIDER = 'S3'
-    ENABLED = TRUE
-    STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::374322211295:role/ia-dds-snowflake'
-    STORAGE_ALLOWED_LOCATIONS = ('s3://sail-mercury-intacct-data-extract-development-eu-west-1/'); 
-
-CREATE OR REPLACE STAGE sage_ai_export_stage
-    STORAGE_INTEGRATION = sage_ai_s3_integration
-    URL = 's3://sail-mercury-intacct-data-extract-development-eu-west-1/'
-    FILE_FORMAT = (TYPE = PARQUET);
-
-
--- ============================================================================
 -- SECTION 5: PROCEDURE - EXPORT DATA TO S3
 -- ============================================================================
 
@@ -323,6 +329,7 @@ DECLARE
     v_export_timestamp_str VARCHAR := TO_VARCHAR(v_export_timestamp, 'YYYYMMDDHH24MISS');
     v_export_date DATE := CURRENT_DATE();
     v_iteration NUMBER;
+    v_iteration_padded VARCHAR;
     v_manifest_id NUMBER;
     v_manifest_file_name VARCHAR;
     v_pod_name VARCHAR;
@@ -358,9 +365,10 @@ BEGIN
     
     SELECT COALESCE(MAX(iteration), 0) + 1 INTO v_iteration 
     FROM export_manifest WHERE date = :v_export_date AND pod_name = :v_pod_name AND feature = :p_feature;
-    v_debug := v_debug || '[4] iteration=' || v_iteration || '\n';
+    v_iteration_padded := LPAD(TO_VARCHAR(v_iteration), 6, '0');
+    v_debug := v_debug || '[4] iteration=' || v_iteration || ', iteration_padded=' || v_iteration_padded || '\n';
     
-    v_manifest_file_name := v_pod_name || '.' || v_manifest_file_prefix || '_' || v_export_timestamp_str;
+    v_manifest_file_name := v_pod_name || '.' || v_manifest_file_prefix || '_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || v_iteration_padded;
     v_debug := v_debug || '[5] manifest_file_name=' || v_manifest_file_name || '\n';
     
     INSERT INTO export_manifest (date, iteration, export_timestamp, manifest_file_name, pod_name, feature)
@@ -538,6 +546,8 @@ DECLARE
     v_all_pods_complete BOOLEAN;
     v_total_pods_for_region NUMBER;
     v_manifest_count NUMBER DEFAULT 0;
+    v_iteration NUMBER;
+    v_iteration_padded VARCHAR;
     v_debug VARCHAR DEFAULT '';
     v_sql VARCHAR;
 BEGIN
@@ -548,14 +558,23 @@ BEGIN
 
     SELECT s3_feature_path, manifest_file_prefix INTO v_s3_feature_path, v_manifest_file_prefix FROM conf_feature WHERE feature = :p_feature;
     v_debug := v_debug || '[3] s3_feature_path=' || v_s3_feature_path || ', manifest_file_prefix=' || v_manifest_file_prefix || '\n';
-    v_final_manifest_name := v_manifest_file_prefix || '_ready_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || '000001.done';
-    v_debug := v_debug || '[4] final_manifest_name=' || v_final_manifest_name || '\n';
 
-    SELECT manifest_file_name INTO v_manifest_file_name
+    SELECT COUNT(*) INTO v_manifest_count
+    FROM export_manifest
+    WHERE date = :v_export_date AND feature = :p_feature AND pod_name = :v_pod_name;
+    IF (v_manifest_count = 0) THEN
+        v_debug := v_debug || '[4] No export found for today - nothing to create manifests for\n';
+        RETURN IFF(p_dry_run, '[DRY RUN] ', '') || 'No export found for ' || p_feature || ' on ' || v_export_date || '\n\n--- DEBUG LOG ---\n' || v_debug;
+    END IF;
+
+    SELECT iteration, manifest_file_name INTO v_iteration, v_manifest_file_name
     FROM export_manifest
     WHERE date = :v_export_date AND feature = :p_feature AND pod_name = :v_pod_name
-    ORDER BY export_timestamp DESC
+    ORDER BY iteration DESC
     LIMIT 1;
+    v_iteration_padded := LPAD(TO_VARCHAR(v_iteration), 6, '0');
+    v_final_manifest_name := v_manifest_file_prefix || '_ready_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || v_iteration_padded || '.done';
+    v_debug := v_debug || '[4] final_manifest_name=' || v_final_manifest_name || '\n';
     v_debug := v_debug || '[5] manifest_file_name=' || v_manifest_file_name || '\n';
 
     SELECT OBJECT_CONSTRUCT(
@@ -572,7 +591,7 @@ BEGIN
     ) INTO v_data_file_content
     FROM export_data_files edf
     JOIN export_manifest em ON edf.manifest_file_id = em.id
-    WHERE em.date = :v_export_date AND em.feature = :p_feature AND em.pod_name = :v_pod_name;
+    WHERE em.date = :v_export_date AND em.feature = :p_feature AND em.pod_name = :v_pod_name AND em.iteration = :v_iteration;
     v_debug := v_debug || '[6] data_file_content=' || TO_VARCHAR(v_data_file_content) || '\n';
 
     v_sql := 'COPY INTO @' || v_s3_stage || '/' || v_s3_feature_path || '/' || v_manifest_file_name || '.json ' ||
@@ -585,14 +604,14 @@ BEGIN
         v_debug := v_debug || '[8] Manifest JSON file written successfully\n';
     END IF;
 
-    v_sql := 'LS @' || v_s3_stage || '/' || v_s3_feature_path || '/ PATTERN=''p.*\\.' || v_manifest_file_prefix || '_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || '.*\\.json.*''';
+    v_sql := 'SELECT COUNT(DISTINCT METADATA$FILENAME) FROM @' || v_s3_stage || '/' || v_s3_feature_path || '/ (FILE_FORMAT => ''json_ff'', PATTERN => ''.*\\.json.*'') WHERE METADATA$FILENAME RLIKE ''' || v_s3_feature_path || '/p.*\\.' || v_manifest_file_prefix || '_' || TO_VARCHAR(v_export_date, 'YYYYMMDD') || v_iteration_padded || '.*\\.json.*''';
     v_debug := v_debug || '[9] LS SQL=' || v_sql || '\n';
     IF (p_dry_run) THEN
         v_manifest_count := 2;
-        v_debug := v_debug || '[10] DRY RUN - Skipping LS, manifest_count=0, total_pods_for_region=' || v_total_pods_for_region || '\n';
+        v_debug := v_debug || '[10] DRY RUN - Skipping LS, manifest_count=2, total_pods_for_region=' || v_total_pods_for_region || '\n';
     ELSE
         EXECUTE IMMEDIATE v_sql;
-        SELECT COUNT(*) INTO v_manifest_count FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+        SELECT $1 INTO v_manifest_count FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
         v_debug := v_debug || '[10] manifest_count=' || v_manifest_count || ', total_pods_for_region=' || v_total_pods_for_region || '\n';
     END IF;
 
@@ -605,7 +624,6 @@ BEGIN
                 'FROM (SELECT OBJECT_CONSTRUCT(' ||
                 '''export_date'', ''' || v_export_date || ''',' ||
                 '''region'', ''' || v_region || ''',' ||
-                '''feature'', ''' || p_feature || ''',' ||
                 '''status'', ''COMPLETE'',' ||
                 '''created_at'', CURRENT_TIMESTAMP()' ||
                 ')) FILE_FORMAT = (TYPE = JSON) SINGLE = TRUE OVERWRITE = FALSE';
@@ -636,7 +654,7 @@ $$
 DECLARE
     v_result STRING;
 BEGIN
-    CALL export_data('cf', FALSE) INTO v_result;
+    CALL create_manifests('cf', FALSE) INTO v_result;
     RETURN v_result;
 END;
 $$;
