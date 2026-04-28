@@ -7,6 +7,7 @@ accounts_payable_bill
 accounts_payable_bill_line
 accounts_payable_term
 
+accounts_receivable_payment_detail
 accounts_receivable_payment
 accounts_receivable_payment_line
 accounts_receivable_customer
@@ -123,7 +124,7 @@ SELECT
     melocation.name AS entity_name ,
     exchangerateinfo.exch_rate_date AS exchangeRate_date,
     exchangerateinfo.exchange_rate AS exchangeRate_rate,
-    exchangerateinfo.exch_rate_type_id AS EXCHANGERATE_TYPEID,
+    exchangerateinfo.exch_rate_type_id AS exchangeRate_typeId,
     accounts_payable_payment.prbatchkey AS paymentSummary_id,
     batch.title AS paymentSummary_title,
     batch.created AS paymentSummary_receiptDate,
@@ -392,7 +393,7 @@ SELECT
     accounts_payable_bill.termkey AS term_key ,
     accounts_payable_bill.vendorkey AS vendor_key ,
     vendor.totaldue AS vendor_vendordue,
-    vendor.totaldue AS vendor_id,
+    vendor.vendorid AS vendor_id,
     CASE
         WHEN accounts_payable_bill.STATE = 'V' THEN 'Reversal'
         WHEN accounts_payable_bill.STATE = 'D' THEN 'Draft'
@@ -873,8 +874,9 @@ accounts_receivable_invoice.trx_totalpaid AS paymentinformation_totaltxnamountpa
 accounts_receivable_invoice.trx_totalselected AS paymentinformation_totaltxnamountselectedforpayment ,
 accounts_receivable_invoice.schopkey AS recurringschedule_key ,
 accounts_receivable_invoice.billbacktemplatekey AS billbacktemplate_key ,
-customer.totaldue AS customer_customerdue ,
+accounts_receivable_invoice.customerkey AS customer_key ,
 customer.customerid AS customer_id ,
+customer.totaldue AS customer_customerdue ,
 accounts_receivable_invoice.custmessageid AS customermessage_id ,
 accounts_receivable_invoice.locationkey AS entity_key ,
 accounts_receivable_invoice.prbatchkey AS invoicesummary_key ,
@@ -1041,197 +1043,6 @@ LEFT JOIN SIF_SAGE_VIEWS.v_sa_userinfo audit_modifiedByUser ON audit_modifiedByU
 WHERE accounts_receivable_payment_detail.modulekey = '4.AR'
 ;
 
------- CONTENT OF accounts_receivable_recurring_invoice
-
-CREATE OR REPLACE VIEW accounts_receivable_recurring_invoice AS
-SELECT
-    accounts_receivable_recurring_invoice.DESCRIPTION AS description,
-    accounts_receivable_recurring_invoice.RECORDNO AS id,
-    accounts_receivable_recurring_invoice.RECORDNO AS key,
-    accounts_receivable_recurring_invoice.RECORDID AS invoiceNumber,
-    accounts_receivable_recurring_invoice.DOCNUMBER AS referenceNumber,
-    accounts_receivable_recurring_invoice.STATUS AS status,
-    accounts_receivable_recurring_invoice.TOTALENTERED AS totalEntered,
-    accounts_receivable_recurring_invoice.TRX_TOTALENTERED AS txnTotalEntered,
-    accounts_receivable_recurring_invoice.createdby AS audit_createdBy,
-    accounts_receivable_recurring_invoice.auwhencreated AS audit_createdDateTime,
-    accounts_receivable_recurring_invoice.modifiedby AS audit_modifiedBy,
-    accounts_receivable_recurring_invoice.whenmodified AS audit_modifiedDateTime,
-    audit_createdByUser.loginid AS audit_createdByUser_id,
-    audit_modifiedByUser.loginid AS audit_modifiedByUser_id,
-    contacts_billTo.name AS BILLTOCONTACTNAME,
-    contacts_billTo.record# AS BILLTOPAYTOKEY,
-    contacts_shipTo.name AS SHIPTOCONTACTNAME,
-    contacts_shipTo.record# AS SHIPTORETURNTOKEY,
-    accounts_receivable_recurring_invoice.contractdesc AS contract_description,
-    accounts_receivable_recurring_invoice.contractid AS contract_id,
-    accounts_receivable_recurring_invoice.basecurr AS currency_baseCurrency,
-    accounts_receivable_recurring_invoice.currency AS currency_txnCurrency,
-    accounts_receivable_recurring_invoice.arrecurpayment.accounttype AS payment_accountType,
-    accounts_receivable_recurring_invoice.arrecurpayment.bankaccountid AS payment_bankAccountID,
-    accounts_receivable_recurring_invoice.arrecurpayment.creditcardtype AS payment_creditCardType,
-    accounts_receivable_recurring_invoice.arrecurpayment.payinfull AS payment_payInFull,
-    accounts_receivable_recurring_invoice.arrecurpayment.paymentamount AS payment_paymentAmount,
-    accounts_receivable_recurring_invoice.paymethod AS payment_paymentMethod, -- Note: the alias for 'paymethod' was corrected here
-    accounts_receivable_recurring_invoice.arrecurpayment.glaccountkey AS payment_undepositedFundsAccountId,
-    accounts_receivable_recurring_invoice.schedule.enddate AS schedule_endDate,
-    accounts_receivable_recurring_invoice.schedule.lastexecdate AS schedule_lastExecutionDate,
-    accounts_receivable_recurring_invoice.schedule.nextexecdate AS schedule_nextExecutionDate,
-    accounts_receivable_recurring_invoice.schedule.repeatby AS schedule_repeatBy,
-    accounts_receivable_recurring_invoice.schedule.repeatcount AS schedule_repeatCount,
-    accounts_receivable_recurring_invoice.schedule.repeatinterval AS schedule_repeatInterval,
-    accounts_receivable_recurring_invoice.schedule.startdate AS schedule_startDate,
-    accounts_receivable_recurring_invoice.schedule.execcount AS schedule_txnCount,
-    accounts_receivable_recurring_invoice.supdoc.documentid AS attachment_id,
-    accounts_receivable_recurring_invoice.supdoc.record# AS attachment_key,
-    accounts_receivable_recurring_invoice.customer.customerid AS customer_id,
-    accounts_receivable_recurring_invoice.customer.record# AS customer_key,
-    accounts_receivable_recurring_invoice.customer.name AS customer_name,
-    accounts_receivable_recurring_invoice.custmessageid AS customerMessage_id,
-    accounts_receivable_recurring_invoice.custmessagekey AS customerMessage_key,
-    accounts_receivable_recurring_invoice.melocation.location_no AS entity_id,
-    accounts_receivable_recurring_invoice.locationkey AS entity_key,
-    accounts_receivable_recurring_invoice.melocation.name AS entity_name,
-    accounts_receivable_recurring_invoice.schopkey AS scheduledOperation_id,
-    accounts_receivable_recurring_invoice.taxsolution.solutionid AS taxSolution_id,
-    accounts_receivable_recurring_invoice.taxsolutionkey AS taxSolution_key,
-    accounts_receivable_recurring_invoice.term.name AS term_id,
-    accounts_receivable_recurring_invoice.termkey AS term_key
-FROM
-    ICRW_SCHEMA.v_sa_recrprrecschdleop accounts_receivable_recurring_invoice
-LEFT JOIN ICRW_SCHEMA.userinfo audit_createdByUser ON audit_createdByUser.CNY_ = accounts_receivable_recurring_invoice.CNY_ AND audit_createdByUser.record_ = accounts_receivable_recurring_invoice.createdby
-LEFT JOIN ICRW_SCHEMA.userinfo audit_modifiedByUser ON audit_modifiedByUser.CNY_ = accounts_receivable_recurring_invoice.CNY_ AND audit_modifiedByUser.record_ = accounts_receivable_recurring_invoice.modifiedby
-LEFT JOIN ICRW_SCHEMA.contact contacts_billTo ON contacts_billTo.CNY_ = accounts_receivable_recurring_invoice.CNY_ AND contacts_billTo.record_ = accounts_receivable_recurring_invoice.BILLTOPAYTOKEY
-LEFT JOIN ICRW_SCHEMA.contact contacts_shipTo ON contacts_shipTo.CNY_ = accounts_receivable_recurring_invoice.CNY_ AND contacts_shipTo.record_ = accounts_receivable_recurring_invoice.SHIPTORETURNTOKEY
-;
-
-
------- CONTENT OF accounts_receivable_recurring_invoice_line
-
-CREATE OR REPLACE VIEW accounts_receivable_recurring_invoice_line AS
-SELECT
-    -- Main fields
-    accounts_receivable_recurring_invoice_line.AMOUNT AS amount,
-    accounts_receivable_recurring_invoice_line.ENTRYDESCRIPTION AS description,
-    accounts_receivable_recurring_invoice_line.REVRECENDDATE AS endDate,
-    accounts_receivable_recurring_invoice_line.RECORDNO AS id,
-    accounts_receivable_recurring_invoice_line.RECORDNO AS key,
-    accounts_receivable_recurring_invoice_line.BILLABLE AS isBillable,
-    accounts_receivable_recurring_invoice_line.SUBTOTAL AS isSubTotal,
-    accounts_receivable_recurring_invoice_line.ISTAX AS isTax,
-    accounts_receivable_recurring_invoice_line.LINE_NO AS lineNumber,
-    accounts_receivable_recurring_invoice_line.REVRECSTARTDATE AS startDate,
-    accounts_receivable_recurring_invoice_line.STATUS AS status,
-    accounts_receivable_recurring_invoice_line.TOTALTRXAMOUNT AS totalTxnAmount,
-    accounts_receivable_recurring_invoice_line.TRX_AMOUNT AS txnAmount,
-    -- Audit fields
-    accounts_receivable_recurring_invoice_line.createdby AS audit_createdBy,
-    accounts_receivable_recurring_invoice_line.whencreated AS audit_createdDateTime,
-    accounts_receivable_recurring_invoice_line.modifiedby AS audit_modifiedBy,
-    accounts_receivable_recurring_invoice_line.whenmodified AS audit_modifiedDateTime,
-    audit_createdByUser.loginid AS audit_createdByUser_id,
-    audit_modifiedByUser.loginid AS audit_modifiedByUser_id,
-    -- Currency fields
-    accounts_receivable_recurring_invoice_line.basecurr AS currency_baseCurrency,
-    accounts_receivable_recurring_invoice_line.exchange_rate AS currency_exchangeRate,
-    accounts_receivable_recurring_invoice_line.exch_rate_date AS currency_exchangeRateDate,
-    accounts_receivable_recurring_invoice_line.exch_rate_type_id AS currency_exchangeRateTypeId,
-    accounts_receivable_recurring_invoice_line.currency AS currency_txnCurrency,
-    -- Dimension: Affiliate Entity
-    dimensions_affiliateEntity.affiliateentityid AS AFFILIATEENTITYID,
-    dimensions_affiliateEntity.record# AS AFFILIATEENTITYDIMKEY,
-    dimensions_affiliateEntity.name AS AFFILIATEENTITYNAME,
-    -- Dimension: Class
-    dimensions_class.classid AS CLASSID,
-    dimensions_class.record# AS CLASSDIMKEY,
-    dimensions_class.name AS CLASSNAME,
-    -- Dimension: Contract
-    dimensions_contract.contractid AS CONTRACTID,
-    dimensions_contract.record# AS CONTRACTDIMKEY,
-    dimensions_contract.name AS CONTRACTNAME,
-    -- Dimension: Cost Type
-    dimensions_costType.costtypeid AS COSTTYPEID,
-    dimensions_costType.record# AS COSTTYPEDIMKEY,
-    dimensions_costType.name AS COSTTYPENAME,
-    -- Dimension: Customer
-    dimensions_customer.customerid AS CUSTOMERID,
-    dimensions_customer.record# AS CUSTOMERDIMKEY,
-    dimensions_customer.name AS CUSTOMERNAME,
-    -- Dimension: Department
-    dimensions_department.dept_no AS DEPARTMENTID,
-    dimensions_department.record# AS DEPT#,
-    dimensions_department.title AS DEPARTMENTNAME,
-    -- Dimension: Employee
-    dimensions_employee.employeeid AS EMPLOYEEID,
-    dimensions_employee.record# AS EMPLOYEEDIMKEY,
-    dimensions_employee.contact.name AS EMPLOYEENAME,
-    -- Dimension: Item
-    dimensions_item.itemid AS ITEMID,
-    dimensions_item.record# AS ITEMDIMKEY,
-    dimensions_item.name AS ITEMNAME,
-    -- Dimension: Location
-    dimensions_location.location_no AS LOCATIONID,
-    dimensions_location.record# AS LOCATION#,
-    dimensions_location.name AS LOCATIONNAME,
-    -- Dimension: Project
-    dimensions_project.projectid AS PROJECTID,
-    dimensions_project.record# AS PROJECTDIMKEY,
-    dimensions_project.name AS PROJECTNAME,
-    -- Dimension: Task
-    dimensions_task.taskid AS TASKID,
-    dimensions_task.record# AS TASKDIMKEY,
-    dimensions_task.name AS TASKNAME,
-    -- Dimension: Vendor
-    dimensions_vendor.vendorid AS VENDORID,
-    dimensions_vendor.record# AS VENDORDIMKEY,
-    dimensions_vendor.name AS VENDORNAME,
-    -- Dimension: Warehouse
-    dimensions_warehouse.warehouseid AS WAREHOUSEID,
-    dimensions_warehouse.record# AS WAREHOUSEDIMKEY,
-    dimensions_warehouse.name AS WAREHOUSENAME,
-    -- Account Label
-    accounts_receivable_recurring_invoice_line.araccountlabel.label AS accountLabel_id,
-    accounts_receivable_recurring_invoice_line.accountlabelkey AS accountLabel_key,
-    -- Allocation
-    accounts_receivable_recurring_invoice_line.alloc.allocationid AS allocation_id,
-    accounts_receivable_recurring_invoice_line.allocationkey AS allocation_key,
-    -- Deferred Revenue GL Account
-    accounts_receivable_recurring_invoice_line.dracct.acct_no AS deferredRevenueGLAccount_id,
-    accounts_receivable_recurring_invoice_line.deferredrevacctkey AS deferredRevenueGLAccount_key,
-    accounts_receivable_recurring_invoice_line.dracct.title AS deferredRevenueGLAccount_name,
-    -- GL Account
-    accounts_receivable_recurring_invoice_line.glaccount.acct_no AS glAccount_id,
-    accounts_receivable_recurring_invoice_line.accountkey AS glAccount_key,
-    accounts_receivable_recurring_invoice_line.glaccount.title AS glAccount_name,
-    -- Offset GL Account
-    accounts_receivable_recurring_invoice_line.offsetglaccountno.acct_no AS offsetGLAccount_id,
-    accounts_receivable_recurring_invoice_line.offset AS offsetGLAccount_key,
-    accounts_receivable_recurring_invoice_line.offsetglaccountno.title AS offsetGLAccount_name,
-    -- Recurring Invoice
-    accounts_receivable_recurring_invoice_line.recordkey AS recurringInvoice_id,
-    -- Tax Detail
-    accounts_receivable_recurring_invoice_line.detail.detailid AS taxDetail_id,
-    accounts_receivable_recurring_invoice_line.taxdetail# AS taxDetail_key,
-    accounts_receivable_recurring_invoice_line.detail.value AS taxDetail_taxRate
-FROM ICRW_SCHEMA.recurprentry accounts_receivable_recurring_invoice_line
--- Audit joins
-LEFT JOIN ICRW_SCHEMA.userinfo audit_createdByUser ON audit_createdByUser.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND audit_createdByUser.record_ = accounts_receivable_recurring_invoice_line.createdby
-LEFT JOIN ICRW_SCHEMA.userinfo audit_modifiedByUser ON audit_modifiedByUser.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND audit_modifiedByUser.record_ = accounts_receivable_recurring_invoice_line.modifiedby
--- Dimension joins
-LEFT JOIN ICRW_SCHEMA.v_affiliateentity dimensions_affiliateEntity ON dimensions_affiliateEntity.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_affiliateEntity.record_ = accounts_receivable_recurring_invoice_line.AFFILIATEENTITYDIMKEY
-LEFT JOIN ICRW_SCHEMA.class dimensions_class ON dimensions_class.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_class.record_ = accounts_receivable_recurring_invoice_line.CLASSDIMKEY
-LEFT JOIN ICRW_SCHEMA.contract dimensions_contract ON dimensions_contract.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_contract.record_ = accounts_receivable_recurring_invoice_line.CONTRACTDIMKEY
-LEFT JOIN ICRW_SCHEMA.costtype dimensions_costType ON dimensions_costType.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_costType.record_ = accounts_receivable_recurring_invoice_line.COSTTYPEDIMKEY
-LEFT JOIN ICRW_SCHEMA.customer dimensions_customer ON dimensions_customer.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_customer.record_ = accounts_receivable_recurring_invoice_line.CUSTOMERDIMKEY
-LEFT JOIN ICRW_SCHEMA.department dimensions_department ON dimensions_department.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_department.record_ = accounts_receivable_recurring_invoice_line.DEPT#
-LEFT JOIN ICRW_SCHEMA.employee dimensions_employee ON dimensions_employee.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_employee.record_ = accounts_receivable_recurring_invoice_line.EMPLOYEEDIMKEY
-LEFT JOIN ICRW_SCHEMA.icitem dimensions_item ON dimensions_item.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_item.record_ = accounts_receivable_recurring_invoice_line.ITEMDIMKEY
-LEFT JOIN ICRW_SCHEMA.location dimensions_location ON dimensions_location.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_location.record_ = accounts_receivable_recurring_invoice_line.LOCATION#
-LEFT JOIN ICRW_SCHEMA.project dimensions_project ON dimensions_project.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_project.record_ = accounts_receivable_recurring_invoice_line.PROJECTDIMKEY
-LEFT JOIN ICRW_SCHEMA.task dimensions_task ON dimensions_task.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_task.record_ = accounts_receivable_recurring_invoice_line.TASKDIMKEY
-LEFT JOIN ICRW_SCHEMA.vendor dimensions_vendor ON dimensions_vendor.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_vendor.record_ = accounts_receivable_recurring_invoice_line.VENDORDIMKEY
-LEFT JOIN ICRW_SCHEMA.icwarehouse dimensions_warehouse ON dimensions_warehouse.CNY_ = accounts_receivable_recurring_invoice_line.CNY_ AND dimensions_warehouse.record_ = accounts_receivable_recurring_invoice_line.WAREHOUSEDIMKEY
-;
 
 ------ CONTENT OF accounts_receivable_term
 
